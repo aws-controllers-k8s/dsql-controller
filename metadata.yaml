@@ -1,0 +1,8 @@
+service:
+  full_name: Amazon Aurora DSQL
+  short_name: DSQL
+  link: https://aws.amazon.com/rds/aurora/dsql/
+  documentation: https://docs.aws.amazon.com/aurora-dsql/latest/userguide/
+api_versions:
+  - api_version: v1alpha1
+    status: available

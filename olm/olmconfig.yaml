@@ -1,0 +1,46 @@
+# This configuration is a placeholder. Replace any values with relevant values for your
+# service controller project.
+---
+annotations:
+  capabilityLevel: Basic Install
+  shortDescription: AWS Aurora DSQL controller is a service controller for managing Aurora DSQL resources
+    in Kubernetes
+displayName: AWS Controllers for Kubernetes - Amazon Aurora DSQL
+description: |-
+  Manage Amazon Aurora DSQL resources in AWS from within your Kubernetes cluster.
+
+
+  **About Amazon Aurora DSQL**
+
+
+  Amazon Aurora DSQL is a serverless distributed SQL database with virtually unlimited scale, high availability, 
+  and zero infrastructure management. Aurora DSQL offers fast distributed SQL reads and writes with optimal price 
+  performance. You can use Aurora DSQL to scale to meet any workload demand without database sharding or instance 
+  upgrades. With its active-active distributed architecture, Aurora DSQL ensures strong data consistency designed 
+  for 99.99% single-Region and 99.999% multi-Region availability. The serverless design removes the operational 
+  burden of patching, upgrades, and maintenance downtime. Aurora DSQL is PostgreSQL compatible, and provides an 
+  easy-to-use developer experience.
+
+
+  **About the AWS Controllers for Kubernetes**
+
+
+  This controller is a component of the [AWS Controller for Kubernetes](https://github.com/aws/aws-controllers-k8s)
+  project. This project is currently in **developer preview**.
+
+
+  **Pre-Installation Steps**
+
+
+  Please follow the following link: [Red Hat OpenShift](https://aws-controllers-k8s.github.io/community/docs/user-docs/openshift/)
+samples:
+- kind: ExampleCustomKind
+  spec: '{}'
+- kind: SecondExampleCustomKind
+  spec: '{}'
+maintainers:
+- name: " maintainer team"
+  email: "ack-maintainers@amazon.com"
+links:
+- name: Amazon Aurora DSQL Developer Resources
+  url: https://aws.amazon.com/rds/aurora/dsql/resources/
