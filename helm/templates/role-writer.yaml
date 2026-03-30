@@ -16,6 +16,7 @@ rules:
 - apiGroups:
   - dsql.services.k8s.aws
   resources:
+  - clusters
   verbs:
   - create
   - delete
@@ -27,6 +28,7 @@ rules:
 - apiGroups:
   - dsql.services.k8s.aws
   resources:
+  - clusters
   verbs:
   - get
   - patch

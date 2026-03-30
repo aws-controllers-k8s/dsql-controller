@@ -27,3 +27,28 @@ var (
 	_ = &aws.JSONValue{}
 	_ = ackv1alpha1.AWSAccountID("")
 )
+
+// A summary of the properties of a cluster.
+type ClusterSummary struct {
+	// The Amazon Resource Name of the cluster.
+	ARN *string `json:"arn,omitempty"`
+	// The ID of the cluster.
+	Identifier *string `json:"identifier,omitempty"`
+}
+
+// Configuration details about encryption for the cluster including the KMS
+// key ARN, encryption type, and encryption status.
+type EncryptionDetails struct {
+	EncryptionStatus *string `json:"encryptionStatus,omitempty"`
+	EncryptionType   *string `json:"encryptionType,omitempty"`
+	KMSKeyARN        *string `json:"kmsKeyARN,omitempty"`
+}
+
+// Defines the structure for multi-Region cluster configurations, containing
+// the witness region and linked cluster settings.
+type MultiRegionProperties struct {
+	// A list of the Amazon Resource Names of the cluster.
+	Clusters []*string `json:"clusters,omitempty"`
+	// Region name.
+	WitnessRegion *string `json:"witnessRegion,omitempty"`
+}

@@ -15,19 +15,19 @@
 
 package v1alpha1
 
-type ClusterStatus string
+type ClusterStatus_SDK string
 
 const (
-	ClusterStatus_ACTIVE         ClusterStatus = "ACTIVE"
-	ClusterStatus_CREATING       ClusterStatus = "CREATING"
-	ClusterStatus_DELETED        ClusterStatus = "DELETED"
-	ClusterStatus_DELETING       ClusterStatus = "DELETING"
-	ClusterStatus_FAILED         ClusterStatus = "FAILED"
-	ClusterStatus_IDLE           ClusterStatus = "IDLE"
-	ClusterStatus_INACTIVE       ClusterStatus = "INACTIVE"
-	ClusterStatus_PENDING_DELETE ClusterStatus = "PENDING_DELETE"
-	ClusterStatus_PENDING_SETUP  ClusterStatus = "PENDING_SETUP"
-	ClusterStatus_UPDATING       ClusterStatus = "UPDATING"
+	ClusterStatus_SDK_ACTIVE         ClusterStatus_SDK = "ACTIVE"
+	ClusterStatus_SDK_CREATING       ClusterStatus_SDK = "CREATING"
+	ClusterStatus_SDK_DELETED        ClusterStatus_SDK = "DELETED"
+	ClusterStatus_SDK_DELETING       ClusterStatus_SDK = "DELETING"
+	ClusterStatus_SDK_FAILED         ClusterStatus_SDK = "FAILED"
+	ClusterStatus_SDK_IDLE           ClusterStatus_SDK = "IDLE"
+	ClusterStatus_SDK_INACTIVE       ClusterStatus_SDK = "INACTIVE"
+	ClusterStatus_SDK_PENDING_DELETE ClusterStatus_SDK = "PENDING_DELETE"
+	ClusterStatus_SDK_PENDING_SETUP  ClusterStatus_SDK = "PENDING_SETUP"
+	ClusterStatus_SDK_UPDATING       ClusterStatus_SDK = "UPDATING"
 )
 
 type EncryptionStatus string

@@ -19,6 +19,7 @@ import (
 	"context"
 	"os"
 
+	kmsapitypes "github.com/aws-controllers-k8s/kms-controller/apis/v1alpha1"
 	ackv1alpha1 "github.com/aws-controllers-k8s/runtime/apis/core/v1alpha1"
 	ackcfg "github.com/aws-controllers-k8s/runtime/pkg/config"
 	ackrt "github.com/aws-controllers-k8s/runtime/pkg/runtime"
@@ -39,6 +40,8 @@ import (
 	svctypes "github.com/aws-controllers-k8s/dsql-controller/apis/v1alpha1"
 	svcresource "github.com/aws-controllers-k8s/dsql-controller/pkg/resource"
 
+	_ "github.com/aws-controllers-k8s/dsql-controller/pkg/resource/cluster"
+
 	"github.com/aws-controllers-k8s/dsql-controller/pkg/version"
 )
 
@@ -54,6 +57,7 @@ func init() {
 
 	_ = svctypes.AddToScheme(scheme)
 	_ = ackv1alpha1.AddToScheme(scheme)
+	_ = kmsapitypes.AddToScheme(scheme)
 }
 
 func main() {
