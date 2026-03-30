@@ -23,9 +23,6 @@ import (
 // ClusterSpec defines the desired state of Cluster.
 type ClusterSpec struct {
 
-	// If enabled, you can't delete your cluster. You must first disable this property
-	// before you can delete your cluster.
-	DeletionProtectionEnabled *bool `json:"deletionProtectionEnabled,omitempty"`
 	// The KMS key that encrypts and protects the data on your cluster. You can
 	// specify the ARN, ID, or alias of an existing key or have Amazon Web Services
 	// create a default key for you.
@@ -36,7 +33,9 @@ type ClusterSpec struct {
 	// The configuration settings when creating a multi-Region cluster, including
 	// the witness region and linked cluster properties.
 	MultiRegionProperties *MultiRegionProperties `json:"multiRegionProperties,omitempty"`
-	Policy                *string                `json:"policy,omitempty"`
+	// An optional resource-based policy document in JSON format that defines access
+	// permissions for the cluster.
+	Policy *string `json:"policy,omitempty"`
 	// A map of key and value pairs to use to tag your cluster.
 	Tags map[string]*string `json:"tags,omitempty"`
 }
@@ -54,18 +53,17 @@ type ClusterStatus struct {
 	// resource
 	// +kubebuilder:validation:Optional
 	Conditions []*ackv1alpha1.Condition `json:"conditions"`
-	// The ARN of the retrieved cluster.
-	//
-	// Regex Pattern: `^arn:aws(-[^:]+)?:dsql:[a-z0-9-]{1,20}:[0-9]{12}:cluster/[a-z0-9]{26}$`
-	// +kubebuilder:validation:Optional
-	ARN *string `json:"arn,omitempty"`
-	// The time of when the cluster was created.
+	// The time of when created the cluster.
 	// +kubebuilder:validation:Optional
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`
-	// The current encryption configuration details for the cluster.
+	// Whether deletion protection is enabled on this cluster.
+	// +kubebuilder:validation:Optional
+	DeletionProtectionEnabled *bool `json:"deletionProtectionEnabled,omitempty"`
+	// The encryption configuration for the cluster that was specified during the
+	// creation process, including the KMS key identifier and encryption state.
 	// +kubebuilder:validation:Optional
 	EncryptionDetails *EncryptionDetails `json:"encryptionDetails,omitempty"`
-	// The connection endpoint for the cluster.
+	// The connection endpoint for the created cluster.
 	//
 	// Regex Pattern: `^[a-zA-Z0-9.-]+$`
 	// +kubebuilder:validation:Optional
@@ -75,7 +73,7 @@ type ClusterStatus struct {
 	// Regex Pattern: `^[a-z0-9]{26}$`
 	// +kubebuilder:validation:Optional
 	Identifier *string `json:"identifier,omitempty"`
-	// The status of the retrieved cluster.
+	// The status of the created cluster.
 	// +kubebuilder:validation:Optional
 	Status *string `json:"status,omitempty"`
 }

@@ -6,3 +6,5 @@ spec:
   tags:
     Environment: testing
     ManagedBy: ACK
+  multiRegionProperties:
+    witnessRegion: $WITNESS_REGION

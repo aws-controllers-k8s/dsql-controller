@@ -1,70 +1,61 @@
-	// Handle policy changes via dedicated PutClusterPolicy/DeleteClusterPolicy APIs.
-	if delta.DifferentAt("Spec.Policy") {
-		if desired.ko.Spec.Policy != nil && *desired.ko.Spec.Policy != "" {
-			_, err = rm.sdkapi.PutClusterPolicy(ctx, &svcsdk.PutClusterPolicyInput{
-				Identifier: latest.ko.Status.Identifier,
-				Policy:     desired.ko.Spec.Policy,
-			})
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			_, err = rm.sdkapi.DeleteClusterPolicy(ctx, &svcsdk.DeleteClusterPolicyInput{
-				Identifier: latest.ko.Status.Identifier,
-			})
-			if err != nil {
-				// Ignore ResourceNotFoundException — policy may already be gone
-				var notFound *svcsdktypes.ResourceNotFoundException
-				if !errors.As(err, &notFound) {
-					return nil, err
-				}
-			}
+	// Guard: Do not attempt updates while the cluster is in a transitional
+	// state. The DSQL API will reject mutations during these phases, so we
+	// requeue and wait for the cluster to reach a stable state.
+	if latest.ko.Status.Status != nil {
+		latestStatus := *latest.ko.Status.Status
+		if latestStatus == "CREATING" || latestStatus == "UPDATING" || latestStatus == "PENDING_SETUP" {
+			return nil, ackrequeue.NeededAfter(
+				fmt.Errorf("cluster is in transitional state '%s', cannot update", latestStatus),
+				ackrequeue.DefaultRequeueAfterDuration,
+			)
 		}
 	}
 
 	// Handle tag changes via TagResource/UntagResource APIs.
 	if delta.DifferentAt("Spec.Tags") {
-		desiredTags, _ := convertToOrderedACKTags(desired.ko.Spec.Tags)
-		latestTags, _ := convertToOrderedACKTags(latest.ko.Spec.Tags)
-		added, _, removed := ackcompare.GetTagsDifference(latestTags, desiredTags)
-		// Remove keys from 'removed' that are also in 'added' (they are updates, not removals)
-		for key := range removed {
-			if _, ok := added[key]; ok {
-				delete(removed, key)
-			}
-		}
 		arn := (*string)(latest.ko.Status.ACKResourceMetadata.ARN)
-		if len(removed) > 0 {
-			removedKeys := make([]string, 0, len(removed))
-			for key := range removed {
-				removedKeys = append(removedKeys, key)
-			}
-			_, err = rm.sdkapi.UntagResource(ctx, &svcsdk.UntagResourceInput{
-				ResourceArn: arn,
-				TagKeys:     removedKeys,
-			})
-			rm.metrics.RecordAPICall("UPDATE", "UntagResource", err)
-			if err != nil {
-				return nil, err
-			}
+		err = syncTags(
+			ctx,
+			desired.ko.Spec.Tags, latest.ko.Spec.Tags,
+			arn, convertToOrderedACKTags, rm.sdkapi, rm.metrics,
+		)
+		if err != nil {
+			return nil, err
 		}
-		if len(added) > 0 {
-			addedMap := make(map[string]string, len(added))
-			for key, val := range added {
-				addedMap[key] = val
-			}
-			_, err = rm.sdkapi.TagResource(ctx, &svcsdk.TagResourceInput{
-				ResourceArn: arn,
-				Tags:        addedMap,
+	}
+
+	// Handle policy changes via PutClusterPolicy/DeleteClusterPolicy APIs.
+	// Policy sync is handled here in the update path (not in sdkFind) to
+	// keep the read path side-effect free.
+	if delta.DifferentAt("Spec.Policy") {
+		desiredPolicy := ""
+		if desired.ko.Spec.Policy != nil {
+			desiredPolicy = *desired.ko.Spec.Policy
+		}
+		if desiredPolicy != "" {
+			_, err = rm.sdkapi.PutClusterPolicy(ctx, &svcsdk.PutClusterPolicyInput{
+				Identifier: latest.ko.Status.Identifier,
+				Policy:     &desiredPolicy,
 			})
-			rm.metrics.RecordAPICall("UPDATE", "TagResource", err)
 			if err != nil {
 				return nil, err
+			}
+		} else {
+			// Desired policy is empty — remove the existing policy.
+			_, err = rm.sdkapi.DeleteClusterPolicy(ctx, &svcsdk.DeleteClusterPolicyInput{
+				Identifier: latest.ko.Status.Identifier,
+			})
+			if err != nil {
+				var notFound *svcsdktypes.ResourceNotFoundException
+				if !errors.As(err, &notFound) {
+					return nil, err
+				}
+				// ResourceNotFoundException means no policy exists — treat as success.
 			}
 		}
 	}
 
-	// If only policy and/or tags changed, skip the UpdateCluster API call.
-	if !delta.DifferentExcept("Spec.Policy", "Spec.Tags") {
+	// If only tags and/or policy changed, skip the UpdateCluster API call.
+	if !delta.DifferentExcept("Spec.Tags", "Spec.Policy") {
 		return desired, nil
 	}

@@ -6,3 +6,7 @@ spec:
   tags:
     Environment: testing
     ManagedBy: ACK
+  multiRegionProperties:
+    witnessRegion: $WITNESS_REGION
+    clusters:
+      - $LINKED_CLUSTER_ARN

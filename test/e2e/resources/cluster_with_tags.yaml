@@ -3,7 +3,6 @@ kind: Cluster
 metadata:
   name: $CLUSTER_NAME
 spec:
-  deletionProtectionEnabled: false
   tags:
     Environment: testing
     Team: platform

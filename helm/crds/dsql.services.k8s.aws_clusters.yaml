@@ -52,11 +52,6 @@ spec:
           spec:
             description: ClusterSpec defines the desired state of Cluster.
             properties:
-              deletionProtectionEnabled:
-                description: |-
-                  If enabled, you can't delete your cluster. You must first disable this property
-                  before you can delete your cluster.
-                type: boolean
               kmsEncryptionKey:
                 description: |-
                   The KMS key that encrypts and protects the data on your cluster. You can
@@ -97,6 +92,9 @@ spec:
                     type: string
                 type: object
               policy:
+                description: |-
+                  An optional resource-based policy document in JSON format that defines access
+                  permissions for the cluster.
                 type: string
               tags:
                 additionalProperties:
@@ -136,12 +134,6 @@ spec:
                 - ownerAccountID
                 - region
                 type: object
-              arn:
-                description: |-
-                  The ARN of the retrieved cluster.
-
-                  Regex Pattern: `^arn:aws(-[^:]+)?:dsql:[a-z0-9-]{1,20}:[0-9]{12}:cluster/[a-z0-9]{26}$`
-                type: string
               conditions:
                 description: |-
                   All CRs managed by ACK have a common `Status.Conditions` member that
@@ -178,12 +170,16 @@ spec:
                   type: object
                 type: array
               creationTime:
-                description: The time of when the cluster was created.
+                description: The time of when created the cluster.
                 format: date-time
                 type: string
+              deletionProtectionEnabled:
+                description: Whether deletion protection is enabled on this cluster.
+                type: boolean
               encryptionDetails:
-                description: The current encryption configuration details for the
-                  cluster.
+                description: |-
+                  The encryption configuration for the cluster that was specified during the
+                  creation process, including the KMS key identifier and encryption state.
                 properties:
                   encryptionStatus:
                     type: string
@@ -194,7 +190,7 @@ spec:
                 type: object
               endpoint:
                 description: |-
-                  The connection endpoint for the cluster.
+                  The connection endpoint for the created cluster.
 
                   Regex Pattern: `^[a-zA-Z0-9.-]+$`
                 type: string
@@ -205,7 +201,7 @@ spec:
                   Regex Pattern: `^[a-z0-9]{26}$`
                 type: string
               status:
-                description: The status of the retrieved cluster.
+                description: The status of the created cluster.
                 type: string
             type: object
         type: object

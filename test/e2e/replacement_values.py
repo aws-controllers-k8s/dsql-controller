@@ -14,8 +14,5 @@
 DSQL-specific test variables.
 """
 
-import os
-
 REPLACEMENT_VALUES = {
-    "AWS_REGION": os.environ.get("AWS_REGION", "us-east-1"),
 }

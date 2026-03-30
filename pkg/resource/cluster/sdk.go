@@ -103,9 +103,9 @@ func (rm *resourceManager) sdkFind(
 		ko.Status.CreationTime = nil
 	}
 	if resp.DeletionProtectionEnabled != nil {
-		ko.Spec.DeletionProtectionEnabled = resp.DeletionProtectionEnabled
+		ko.Status.DeletionProtectionEnabled = resp.DeletionProtectionEnabled
 	} else {
-		ko.Spec.DeletionProtectionEnabled = nil
+		ko.Status.DeletionProtectionEnabled = nil
 	}
 	if resp.EncryptionDetails != nil {
 		f3 := &svcapitypes.EncryptionDetails{}
@@ -156,37 +156,27 @@ func (rm *resourceManager) sdkFind(
 	}
 
 	rm.setStatusDefaults(ko)
-	// Handle async cluster lifecycle states.
-	// The ACK runtime automatically requeues when ResourceSynced is False.
-	if ko.Status.Status != nil {
-		switch *ko.Status.Status {
-		case "CREATING", "UPDATING", "DELETING", "PENDING_SETUP", "PENDING_DELETE":
-			ackcondition.SetSynced(&resource{ko}, corev1.ConditionFalse, nil, nil)
-			return &resource{ko}, nil
-		case "FAILED":
-			msg := "Cluster is in FAILED state"
-			ackcondition.SetTerminal(&resource{ko}, corev1.ConditionTrue, &msg, nil)
-			return &resource{ko}, nil
-		case "ACTIVE", "IDLE", "INACTIVE":
-			ackcondition.SetSynced(&resource{ko}, corev1.ConditionTrue, nil, nil)
-		}
-	}
 
-	// Sync policy from the dedicated GetClusterPolicy API.
-	// Policy is a custom spec field managed separately from CreateCluster/UpdateCluster.
+	// Read the current cluster policy via the dedicated GetClusterPolicy API.
+	// Policy is not returned by GetCluster, so we fetch it separately and
+	// populate ko.Spec.Policy with the current AWS value. This hook is
+	// read-only — policy mutations are handled in the update hook.
 	if ko.Status.Identifier != nil {
-		policyResp, err := rm.sdkapi.GetClusterPolicy(ctx, &svcsdk.GetClusterPolicyInput{
+		policyResp, policyErr := rm.sdkapi.GetClusterPolicy(ctx, &svcsdk.GetClusterPolicyInput{
 			Identifier: ko.Status.Identifier,
 		})
-		if err != nil {
+		if policyErr != nil {
 			var notFound *svcsdktypes.ResourceNotFoundException
-			if !errors.As(err, &notFound) {
-				return nil, err
+			if !errors.As(policyErr, &notFound) {
+				return nil, policyErr
 			}
-			// ResourceNotFoundException means no policy is attached
+			// No policy attached — leave as nil so it matches a desired spec
+			// that also has no policy (avoids a spurious nil vs "" delta).
 			ko.Spec.Policy = nil
 		} else if policyResp.Policy != nil {
 			ko.Spec.Policy = policyResp.Policy
+		} else {
+			ko.Spec.Policy = nil
 		}
 	}
 
@@ -258,9 +248,9 @@ func (rm *resourceManager) sdkCreate(
 		ko.Status.CreationTime = nil
 	}
 	if resp.DeletionProtectionEnabled != nil {
-		ko.Spec.DeletionProtectionEnabled = resp.DeletionProtectionEnabled
+		ko.Status.DeletionProtectionEnabled = resp.DeletionProtectionEnabled
 	} else {
-		ko.Spec.DeletionProtectionEnabled = nil
+		ko.Status.DeletionProtectionEnabled = nil
 	}
 	if resp.EncryptionDetails != nil {
 		f3 := &svcapitypes.EncryptionDetails{}
@@ -306,9 +296,11 @@ func (rm *resourceManager) sdkCreate(
 	}
 
 	rm.setStatusDefaults(ko)
-	// Cluster creation is asynchronous — the cluster starts in CREATING state.
-	// Set ResourceSynced to False so the ACK runtime requeues until ACTIVE.
-	ackcondition.SetSynced(&resource{ko}, corev1.ConditionFalse, nil, nil)
+	// No custom post-create logic needed. synced:when in generator.yaml
+	// handles the Synced condition based on cluster status. A newly created
+	// cluster starts in CREATING status, which is not in the synced list
+	// (ACTIVE, IDLE, INACTIVE), so the runtime automatically sets
+	// Synced=False and requeues until the cluster reaches a stable state.
 
 	return &resource{ko}, nil
 }
@@ -321,21 +313,21 @@ func (rm *resourceManager) newCreateRequestPayload(
 ) (*svcsdk.CreateClusterInput, error) {
 	res := &svcsdk.CreateClusterInput{}
 
-	if r.ko.Spec.DeletionProtectionEnabled != nil {
-		res.DeletionProtectionEnabled = r.ko.Spec.DeletionProtectionEnabled
-	}
 	if r.ko.Spec.KMSEncryptionKey != nil {
 		res.KmsEncryptionKey = r.ko.Spec.KMSEncryptionKey
 	}
 	if r.ko.Spec.MultiRegionProperties != nil {
-		f3 := &svcsdktypes.MultiRegionProperties{}
+		f2 := &svcsdktypes.MultiRegionProperties{}
 		if r.ko.Spec.MultiRegionProperties.Clusters != nil {
-			f3.Clusters = aws.ToStringSlice(r.ko.Spec.MultiRegionProperties.Clusters)
+			f2.Clusters = aws.ToStringSlice(r.ko.Spec.MultiRegionProperties.Clusters)
 		}
 		if r.ko.Spec.MultiRegionProperties.WitnessRegion != nil {
-			f3.WitnessRegion = r.ko.Spec.MultiRegionProperties.WitnessRegion
+			f2.WitnessRegion = r.ko.Spec.MultiRegionProperties.WitnessRegion
 		}
-		res.MultiRegionProperties = f3
+		res.MultiRegionProperties = f2
+	}
+	if r.ko.Spec.Policy != nil {
+		res.Policy = r.ko.Spec.Policy
 	}
 	if r.ko.Spec.Tags != nil {
 		res.Tags = aws.ToStringMap(r.ko.Spec.Tags)
@@ -357,74 +349,65 @@ func (rm *resourceManager) sdkUpdate(
 	defer func() {
 		exit(err)
 	}()
-	// Handle policy changes via dedicated PutClusterPolicy/DeleteClusterPolicy APIs.
-	if delta.DifferentAt("Spec.Policy") {
-		if desired.ko.Spec.Policy != nil && *desired.ko.Spec.Policy != "" {
-			_, err = rm.sdkapi.PutClusterPolicy(ctx, &svcsdk.PutClusterPolicyInput{
-				Identifier: latest.ko.Status.Identifier,
-				Policy:     desired.ko.Spec.Policy,
-			})
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			_, err = rm.sdkapi.DeleteClusterPolicy(ctx, &svcsdk.DeleteClusterPolicyInput{
-				Identifier: latest.ko.Status.Identifier,
-			})
-			if err != nil {
-				// Ignore ResourceNotFoundException — policy may already be gone
-				var notFound *svcsdktypes.ResourceNotFoundException
-				if !errors.As(err, &notFound) {
-					return nil, err
-				}
-			}
+	// Guard: Do not attempt updates while the cluster is in a transitional
+	// state. The DSQL API will reject mutations during these phases, so we
+	// requeue and wait for the cluster to reach a stable state.
+	if latest.ko.Status.Status != nil {
+		latestStatus := *latest.ko.Status.Status
+		if latestStatus == "CREATING" || latestStatus == "UPDATING" || latestStatus == "PENDING_SETUP" {
+			return nil, ackrequeue.NeededAfter(
+				fmt.Errorf("cluster is in transitional state '%s', cannot update", latestStatus),
+				ackrequeue.DefaultRequeueAfterDuration,
+			)
 		}
 	}
 
 	// Handle tag changes via TagResource/UntagResource APIs.
 	if delta.DifferentAt("Spec.Tags") {
-		desiredTags, _ := convertToOrderedACKTags(desired.ko.Spec.Tags)
-		latestTags, _ := convertToOrderedACKTags(latest.ko.Spec.Tags)
-		added, _, removed := ackcompare.GetTagsDifference(latestTags, desiredTags)
-		// Remove keys from 'removed' that are also in 'added' (they are updates, not removals)
-		for key := range removed {
-			if _, ok := added[key]; ok {
-				delete(removed, key)
-			}
-		}
 		arn := (*string)(latest.ko.Status.ACKResourceMetadata.ARN)
-		if len(removed) > 0 {
-			removedKeys := make([]string, 0, len(removed))
-			for key := range removed {
-				removedKeys = append(removedKeys, key)
-			}
-			_, err = rm.sdkapi.UntagResource(ctx, &svcsdk.UntagResourceInput{
-				ResourceArn: arn,
-				TagKeys:     removedKeys,
-			})
-			rm.metrics.RecordAPICall("UPDATE", "UntagResource", err)
-			if err != nil {
-				return nil, err
-			}
+		err = syncTags(
+			ctx,
+			desired.ko.Spec.Tags, latest.ko.Spec.Tags,
+			arn, convertToOrderedACKTags, rm.sdkapi, rm.metrics,
+		)
+		if err != nil {
+			return nil, err
 		}
-		if len(added) > 0 {
-			addedMap := make(map[string]string, len(added))
-			for key, val := range added {
-				addedMap[key] = val
-			}
-			_, err = rm.sdkapi.TagResource(ctx, &svcsdk.TagResourceInput{
-				ResourceArn: arn,
-				Tags:        addedMap,
+	}
+
+	// Handle policy changes via PutClusterPolicy/DeleteClusterPolicy APIs.
+	// Policy sync is handled here in the update path (not in sdkFind) to
+	// keep the read path side-effect free.
+	if delta.DifferentAt("Spec.Policy") {
+		desiredPolicy := ""
+		if desired.ko.Spec.Policy != nil {
+			desiredPolicy = *desired.ko.Spec.Policy
+		}
+		if desiredPolicy != "" {
+			_, err = rm.sdkapi.PutClusterPolicy(ctx, &svcsdk.PutClusterPolicyInput{
+				Identifier: latest.ko.Status.Identifier,
+				Policy:     &desiredPolicy,
 			})
-			rm.metrics.RecordAPICall("UPDATE", "TagResource", err)
 			if err != nil {
 				return nil, err
+			}
+		} else {
+			// Desired policy is empty — remove the existing policy.
+			_, err = rm.sdkapi.DeleteClusterPolicy(ctx, &svcsdk.DeleteClusterPolicyInput{
+				Identifier: latest.ko.Status.Identifier,
+			})
+			if err != nil {
+				var notFound *svcsdktypes.ResourceNotFoundException
+				if !errors.As(err, &notFound) {
+					return nil, err
+				}
+				// ResourceNotFoundException means no policy exists — treat as success.
 			}
 		}
 	}
 
-	// If only policy and/or tags changed, skip the UpdateCluster API call.
-	if !delta.DifferentExcept("Spec.Policy", "Spec.Tags") {
+	// If only tags and/or policy changed, skip the UpdateCluster API call.
+	if !delta.DifferentExcept("Spec.Tags", "Spec.Policy") {
 		return desired, nil
 	}
 
@@ -480,9 +463,6 @@ func (rm *resourceManager) newUpdateRequestPayload(
 ) (*svcsdk.UpdateClusterInput, error) {
 	res := &svcsdk.UpdateClusterInput{}
 
-	if r.ko.Spec.DeletionProtectionEnabled != nil {
-		res.DeletionProtectionEnabled = r.ko.Spec.DeletionProtectionEnabled
-	}
 	if r.ko.Status.Identifier != nil {
 		res.Identifier = r.ko.Status.Identifier
 	}
@@ -490,14 +470,14 @@ func (rm *resourceManager) newUpdateRequestPayload(
 		res.KmsEncryptionKey = r.ko.Spec.KMSEncryptionKey
 	}
 	if r.ko.Spec.MultiRegionProperties != nil {
-		f4 := &svcsdktypes.MultiRegionProperties{}
+		f3 := &svcsdktypes.MultiRegionProperties{}
 		if r.ko.Spec.MultiRegionProperties.Clusters != nil {
-			f4.Clusters = aws.ToStringSlice(r.ko.Spec.MultiRegionProperties.Clusters)
+			f3.Clusters = aws.ToStringSlice(r.ko.Spec.MultiRegionProperties.Clusters)
 		}
 		if r.ko.Spec.MultiRegionProperties.WitnessRegion != nil {
-			f4.WitnessRegion = r.ko.Spec.MultiRegionProperties.WitnessRegion
+			f3.WitnessRegion = r.ko.Spec.MultiRegionProperties.WitnessRegion
 		}
-		res.MultiRegionProperties = f4
+		res.MultiRegionProperties = f3
 	}
 
 	return res, nil
@@ -513,9 +493,24 @@ func (rm *resourceManager) sdkDelete(
 	defer func() {
 		exit(err)
 	}()
-	// Note: If deletion protection is enabled on the cluster, the DeleteCluster
-	// API will return an error. The user must set deletionProtectionEnabled to
-	// false on the Cluster resource before deleting it.
+	// Disable deletion protection before deleting the cluster.
+	// The DSQL API defaults deletionProtectionEnabled to true, and since
+	// we've removed this field from the CRD to avoid a known deadlock
+	// (see https://github.com/aws-controllers-k8s/community/issues/2436),
+	// the controller must disable it before deletion can succeed.
+	// Users who want to protect clusters from accidental deletion should
+	// use the ACK deletion-policy: retain annotation instead.
+	if r.ko.Status.Identifier != nil {
+		updateInput := &svcsdk.UpdateClusterInput{
+			Identifier:                r.ko.Status.Identifier,
+			DeletionProtectionEnabled: aws.Bool(false),
+		}
+		_, err = rm.sdkapi.UpdateCluster(ctx, updateInput)
+		rm.metrics.RecordAPICall("UPDATE", "UpdateCluster", err)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	input, err := rm.newDeleteRequestPayload(r)
 	if err != nil {
@@ -650,9 +645,7 @@ func (rm *resourceManager) terminalAWSError(err error) bool {
 		return false
 	}
 	switch terminalErr.ErrorCode() {
-	case "ValidationException",
-		"AccessDeniedException",
-		"ServiceQuotaExceededException":
+	case "ValidationException":
 		return true
 	default:
 		return false

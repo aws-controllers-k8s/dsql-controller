@@ -42,13 +42,6 @@ func newResourceDelta(
 		return delta
 	}
 
-	if ackcompare.HasNilDifference(a.ko.Spec.DeletionProtectionEnabled, b.ko.Spec.DeletionProtectionEnabled) {
-		delta.Add("Spec.DeletionProtectionEnabled", a.ko.Spec.DeletionProtectionEnabled, b.ko.Spec.DeletionProtectionEnabled)
-	} else if a.ko.Spec.DeletionProtectionEnabled != nil && b.ko.Spec.DeletionProtectionEnabled != nil {
-		if *a.ko.Spec.DeletionProtectionEnabled != *b.ko.Spec.DeletionProtectionEnabled {
-			delta.Add("Spec.DeletionProtectionEnabled", a.ko.Spec.DeletionProtectionEnabled, b.ko.Spec.DeletionProtectionEnabled)
-		}
-	}
 	if ackcompare.HasNilDifference(a.ko.Spec.KMSEncryptionKey, b.ko.Spec.KMSEncryptionKey) {
 		delta.Add("Spec.KMSEncryptionKey", a.ko.Spec.KMSEncryptionKey, b.ko.Spec.KMSEncryptionKey)
 	} else if a.ko.Spec.KMSEncryptionKey != nil && b.ko.Spec.KMSEncryptionKey != nil {
@@ -80,9 +73,14 @@ func newResourceDelta(
 	if ackcompare.HasNilDifference(a.ko.Spec.Policy, b.ko.Spec.Policy) {
 		delta.Add("Spec.Policy", a.ko.Spec.Policy, b.ko.Spec.Policy)
 	} else if a.ko.Spec.Policy != nil && b.ko.Spec.Policy != nil {
-		if *a.ko.Spec.Policy != *b.ko.Spec.Policy {
+		if equal, err := ackcompare.IAMPolicyDocumentEqual(*a.ko.Spec.Policy, *b.ko.Spec.Policy); err != nil || !equal {
 			delta.Add("Spec.Policy", a.ko.Spec.Policy, b.ko.Spec.Policy)
 		}
+	}
+	desiredACKTags, _ := convertToOrderedACKTags(a.ko.Spec.Tags)
+	latestACKTags, _ := convertToOrderedACKTags(b.ko.Spec.Tags)
+	if !ackcompare.MapStringStringEqual(desiredACKTags, latestACKTags) {
+		delta.Add("Spec.Tags", a.ko.Spec.Tags, b.ko.Spec.Tags)
 	}
 
 	return delta

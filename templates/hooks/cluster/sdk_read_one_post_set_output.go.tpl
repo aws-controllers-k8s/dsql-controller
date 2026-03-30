@@ -1,33 +1,23 @@
-	// Handle async cluster lifecycle states.
-	// The ACK runtime automatically requeues when ResourceSynced is False.
-	if ko.Status.Status != nil {
-		switch *ko.Status.Status {
-		case "CREATING", "UPDATING", "DELETING", "PENDING_SETUP", "PENDING_DELETE":
-			ackcondition.SetSynced(&resource{ko}, corev1.ConditionFalse, nil, nil)
-			return &resource{ko}, nil
-		case "FAILED":
-			msg := "Cluster is in FAILED state"
-			ackcondition.SetTerminal(&resource{ko}, corev1.ConditionTrue, &msg, nil)
-			return &resource{ko}, nil
-		case "ACTIVE", "IDLE", "INACTIVE":
-			ackcondition.SetSynced(&resource{ko}, corev1.ConditionTrue, nil, nil)
-		}
-	}
 
-	// Sync policy from the dedicated GetClusterPolicy API.
-	// Policy is a custom spec field managed separately from CreateCluster/UpdateCluster.
+	// Read the current cluster policy via the dedicated GetClusterPolicy API.
+	// Policy is not returned by GetCluster, so we fetch it separately and
+	// populate ko.Spec.Policy with the current AWS value. This hook is
+	// read-only — policy mutations are handled in the update hook.
 	if ko.Status.Identifier != nil {
-		policyResp, err := rm.sdkapi.GetClusterPolicy(ctx, &svcsdk.GetClusterPolicyInput{
+		policyResp, policyErr := rm.sdkapi.GetClusterPolicy(ctx, &svcsdk.GetClusterPolicyInput{
 			Identifier: ko.Status.Identifier,
 		})
-		if err != nil {
+		if policyErr != nil {
 			var notFound *svcsdktypes.ResourceNotFoundException
-			if !errors.As(err, &notFound) {
-				return nil, err
+			if !errors.As(policyErr, &notFound) {
+				return nil, policyErr
 			}
-			// ResourceNotFoundException means no policy is attached
+			// No policy attached — leave as nil so it matches a desired spec
+			// that also has no policy (avoids a spurious nil vs "" delta).
 			ko.Spec.Policy = nil
 		} else if policyResp.Policy != nil {
 			ko.Spec.Policy = policyResp.Policy
+		} else {
+			ko.Spec.Policy = nil
 		}
 	}
