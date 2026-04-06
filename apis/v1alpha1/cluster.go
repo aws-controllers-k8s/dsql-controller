@@ -23,6 +23,9 @@ import (
 // ClusterSpec defines the desired state of Cluster.
 type ClusterSpec struct {
 
+	// If enabled, you can't delete your cluster. You must first disable this property
+	// before you can delete your cluster.
+	DeletionProtectionEnabled *bool `json:"deletionProtectionEnabled,omitempty"`
 	// The KMS key that encrypts and protects the data on your cluster. You can
 	// specify the ARN, ID, or alias of an existing key or have Amazon Web Services
 	// create a default key for you.
@@ -56,9 +59,6 @@ type ClusterStatus struct {
 	// The time of when created the cluster.
 	// +kubebuilder:validation:Optional
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`
-	// Whether deletion protection is enabled on this cluster.
-	// +kubebuilder:validation:Optional
-	DeletionProtectionEnabled *bool `json:"deletionProtectionEnabled,omitempty"`
 	// The encryption configuration for the cluster that was specified during the
 	// creation process, including the KMS key identifier and encryption state.
 	// +kubebuilder:validation:Optional

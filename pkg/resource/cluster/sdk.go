@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 
@@ -51,6 +52,7 @@ var (
 	_ = fmt.Sprintf("")
 	_ = &ackrequeue.NoRequeue{}
 	_ = &aws.Config{}
+	_ = math.MaxInt32
 )
 
 // sdkFind returns SDK-specific information about a supplied resource
@@ -103,9 +105,9 @@ func (rm *resourceManager) sdkFind(
 		ko.Status.CreationTime = nil
 	}
 	if resp.DeletionProtectionEnabled != nil {
-		ko.Status.DeletionProtectionEnabled = resp.DeletionProtectionEnabled
+		ko.Spec.DeletionProtectionEnabled = resp.DeletionProtectionEnabled
 	} else {
-		ko.Status.DeletionProtectionEnabled = nil
+		ko.Spec.DeletionProtectionEnabled = nil
 	}
 	if resp.EncryptionDetails != nil {
 		f3 := &svcapitypes.EncryptionDetails{}
@@ -248,9 +250,9 @@ func (rm *resourceManager) sdkCreate(
 		ko.Status.CreationTime = nil
 	}
 	if resp.DeletionProtectionEnabled != nil {
-		ko.Status.DeletionProtectionEnabled = resp.DeletionProtectionEnabled
+		ko.Spec.DeletionProtectionEnabled = resp.DeletionProtectionEnabled
 	} else {
-		ko.Status.DeletionProtectionEnabled = nil
+		ko.Spec.DeletionProtectionEnabled = nil
 	}
 	if resp.EncryptionDetails != nil {
 		f3 := &svcapitypes.EncryptionDetails{}
@@ -313,18 +315,21 @@ func (rm *resourceManager) newCreateRequestPayload(
 ) (*svcsdk.CreateClusterInput, error) {
 	res := &svcsdk.CreateClusterInput{}
 
+	if r.ko.Spec.DeletionProtectionEnabled != nil {
+		res.DeletionProtectionEnabled = r.ko.Spec.DeletionProtectionEnabled
+	}
 	if r.ko.Spec.KMSEncryptionKey != nil {
 		res.KmsEncryptionKey = r.ko.Spec.KMSEncryptionKey
 	}
 	if r.ko.Spec.MultiRegionProperties != nil {
-		f2 := &svcsdktypes.MultiRegionProperties{}
+		f3 := &svcsdktypes.MultiRegionProperties{}
 		if r.ko.Spec.MultiRegionProperties.Clusters != nil {
-			f2.Clusters = aws.ToStringSlice(r.ko.Spec.MultiRegionProperties.Clusters)
+			f3.Clusters = aws.ToStringSlice(r.ko.Spec.MultiRegionProperties.Clusters)
 		}
 		if r.ko.Spec.MultiRegionProperties.WitnessRegion != nil {
-			f2.WitnessRegion = r.ko.Spec.MultiRegionProperties.WitnessRegion
+			f3.WitnessRegion = r.ko.Spec.MultiRegionProperties.WitnessRegion
 		}
-		res.MultiRegionProperties = f2
+		res.MultiRegionProperties = f3
 	}
 	if r.ko.Spec.Policy != nil {
 		res.Policy = r.ko.Spec.Policy
@@ -463,6 +468,9 @@ func (rm *resourceManager) newUpdateRequestPayload(
 ) (*svcsdk.UpdateClusterInput, error) {
 	res := &svcsdk.UpdateClusterInput{}
 
+	if r.ko.Spec.DeletionProtectionEnabled != nil {
+		res.DeletionProtectionEnabled = r.ko.Spec.DeletionProtectionEnabled
+	}
 	if r.ko.Status.Identifier != nil {
 		res.Identifier = r.ko.Status.Identifier
 	}
@@ -470,14 +478,14 @@ func (rm *resourceManager) newUpdateRequestPayload(
 		res.KmsEncryptionKey = r.ko.Spec.KMSEncryptionKey
 	}
 	if r.ko.Spec.MultiRegionProperties != nil {
-		f3 := &svcsdktypes.MultiRegionProperties{}
+		f4 := &svcsdktypes.MultiRegionProperties{}
 		if r.ko.Spec.MultiRegionProperties.Clusters != nil {
-			f3.Clusters = aws.ToStringSlice(r.ko.Spec.MultiRegionProperties.Clusters)
+			f4.Clusters = aws.ToStringSlice(r.ko.Spec.MultiRegionProperties.Clusters)
 		}
 		if r.ko.Spec.MultiRegionProperties.WitnessRegion != nil {
-			f3.WitnessRegion = r.ko.Spec.MultiRegionProperties.WitnessRegion
+			f4.WitnessRegion = r.ko.Spec.MultiRegionProperties.WitnessRegion
 		}
-		res.MultiRegionProperties = f3
+		res.MultiRegionProperties = f4
 	}
 
 	return res, nil
@@ -493,24 +501,11 @@ func (rm *resourceManager) sdkDelete(
 	defer func() {
 		exit(err)
 	}()
-	// Disable deletion protection before deleting the cluster.
-	// The DSQL API defaults deletionProtectionEnabled to true, and since
-	// we've removed this field from the CRD to avoid a known deadlock
-	// (see https://github.com/aws-controllers-k8s/community/issues/2436),
-	// the controller must disable it before deletion can succeed.
-	// Users who want to protect clusters from accidental deletion should
-	// use the ACK deletion-policy: retain annotation instead.
-	if r.ko.Status.Identifier != nil {
-		updateInput := &svcsdk.UpdateClusterInput{
-			Identifier:                r.ko.Status.Identifier,
-			DeletionProtectionEnabled: aws.Bool(false),
-		}
-		_, err = rm.sdkapi.UpdateCluster(ctx, updateInput)
-		rm.metrics.RecordAPICall("UPDATE", "UpdateCluster", err)
-		if err != nil {
-			return nil, err
-		}
-	}
+	// Note: Users can annotate their Cluster CR with
+	// services.k8s.aws/deletion-policy: retain to prevent the controller from
+	// deleting the AWS resource when the CR is deleted.
+	// Users must set spec.deletionProtectionEnabled to false before deleting
+	// the CR, otherwise the DSQL API will reject the DeleteCluster call.
 
 	input, err := rm.newDeleteRequestPayload(r)
 	if err != nil {

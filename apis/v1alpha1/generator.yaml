@@ -5,12 +5,13 @@ ignore:
     # IAM policy lockout checks. It should not be exposed to end users through
     # the CRD as it could lock the cluster owner out of their own cluster.
     - CreateClusterInput.BypassPolicyLockoutSafetyCheck
-    - CreateClusterInput.DeletionProtectionEnabled
-    - UpdateClusterInput.DeletionProtectionEnabled
 
 resources:
   Cluster:
     ignore_idempotency_token: true
+    custom_cel_rules:
+      - rule: "!has(self.metadata.deletionTimestamp) || !has(self.spec.deletionProtectionEnabled) || self.spec.deletionProtectionEnabled != true"
+        message: "Cannot delete Cluster with deletionProtectionEnabled set to true. Set spec.deletionProtectionEnabled to false before deleting."
     synced:
       when:
         - path: Status.Status
@@ -37,6 +38,10 @@ resources:
       Identifier:
         is_primary_key: true
         is_read_only: true
+      DeletionProtectionEnabled:
+        late_initialize: {}
+        compare:
+          is_ignored: true
       Policy:
         is_iam_policy: true
       KMSEncryptionKey:

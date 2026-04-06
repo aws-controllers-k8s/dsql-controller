@@ -31,6 +31,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: Cluster is the Schema for the Clusters API
+        x-kubernetes-validations:
+        - rule: "!has(self.metadata.deletionTimestamp) || !has(self.spec.deletionProtectionEnabled) || self.spec.deletionProtectionEnabled != true"
+          message: "Cannot delete Cluster with deletionProtectionEnabled set to true. Set spec.deletionProtectionEnabled to false before deleting."
         properties:
           apiVersion:
             description: |-
@@ -52,6 +55,11 @@ spec:
           spec:
             description: ClusterSpec defines the desired state of Cluster.
             properties:
+              deletionProtectionEnabled:
+                description: |-
+                  If enabled, you can't delete your cluster. You must first disable this property
+                  before you can delete your cluster.
+                type: boolean
               kmsEncryptionKey:
                 description: |-
                   The KMS key that encrypts and protects the data on your cluster. You can
@@ -173,9 +181,6 @@ spec:
                 description: The time of when created the cluster.
                 format: date-time
                 type: string
-              deletionProtectionEnabled:
-                description: Whether deletion protection is enabled on this cluster.
-                type: boolean
               encryptionDetails:
                 description: |-
                   The encryption configuration for the cluster that was specified during the

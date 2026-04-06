@@ -34,6 +34,7 @@ from acktest.k8s import resource as k8s
 from acktest.k8s import condition
 from acktest import tags
 from acktest.aws.identity import get_account_id
+from kubernetes.client.rest import ApiException
 from e2e import service_marker, CRD_GROUP, CRD_VERSION, load_dsql_resource
 from e2e.replacement_values import REPLACEMENT_VALUES
 
@@ -135,8 +136,11 @@ def simple_cluster(dsql_client):
 
     yield (ref, cr)
 
-    # Teardown
+    # Teardown: disable deletion protection, then delete
     try:
+        updates = {"spec": {"deletionProtectionEnabled": False}}
+        k8s.patch_custom_resource(ref, updates)
+        time.sleep(UPDATE_WAIT_AFTER_SECONDS)
         _, deleted = k8s.delete_custom_resource(ref, 3, 10)
         assert deleted
     except Exception:
@@ -169,8 +173,11 @@ def cluster_with_tags(dsql_client):
 
     yield (ref, cr)
 
-    # Teardown
+    # Teardown: disable deletion protection, then delete
     try:
+        updates = {"spec": {"deletionProtectionEnabled": False}}
+        k8s.patch_custom_resource(ref, updates)
+        time.sleep(UPDATE_WAIT_AFTER_SECONDS)
         _, deleted = k8s.delete_custom_resource(ref, 3, 10)
         assert deleted
     except Exception:
@@ -209,8 +216,11 @@ def multi_region_cluster(dsql_client):
 
     yield (ref, cr)
 
-    # Teardown
+    # Teardown: disable deletion protection, then delete
     try:
+        updates = {"spec": {"deletionProtectionEnabled": False}}
+        k8s.patch_custom_resource(ref, updates)
+        time.sleep(UPDATE_WAIT_AFTER_SECONDS)
         _, deleted = k8s.delete_custom_resource(ref, 3, 10)
         assert deleted
     except Exception:
@@ -433,6 +443,13 @@ class TestCluster:
         aws_cluster = _get_aws_cluster(dsql_client, identifier)
         assert aws_cluster is not None
 
+        # Disable deletion protection before deleting
+        updates = {"spec": {"deletionProtectionEnabled": False}}
+        k8s.patch_custom_resource(ref, updates)
+        time.sleep(UPDATE_WAIT_AFTER_SECONDS)
+        assert _wait_for_cluster_active(ref), \
+            "Cluster did not return to Synced after disabling deletion protection"
+
         # Delete the K8s resource
         _, deleted = k8s.delete_custom_resource(ref, 3, 10)
         assert deleted
@@ -537,6 +554,101 @@ class TestCluster:
         assert witness_region == expected_witness, \
             f"witnessRegion mismatch: expected '{expected_witness}', got '{witness_region}'"
 
+    def test_deletion_protection_blocks_delete(self, dsql_client):
+        """Test that CRD CEL validation blocks deletion when deletionProtectionEnabled is true.
+
+        This test validates that the x-kubernetes-validations CEL rule on the
+        CRD prevents deletion of a Cluster CR when spec.deletionProtectionEnabled
+        is true, avoiding the deadlock described in community#2436.
+
+        Flow:
+        1. Create cluster (DSQL defaults deletionProtectionEnabled to true)
+        2. Wait for ACTIVE and late-initialization of the field
+        3. Attempt delete — expect rejection by CEL rule
+        4. Patch deletionProtectionEnabled to false
+        5. Wait for update to reconcile
+        6. Delete again — expect success
+        """
+        resource_name = random_suffix_name("ack-dsql-dp", 24)
+
+        replacements = REPLACEMENT_VALUES.copy()
+        replacements["CLUSTER_NAME"] = resource_name
+
+        resource_data = load_dsql_resource(
+            "cluster",
+            additional_replacements=replacements,
+        )
+
+        ref = k8s.CustomResourceReference(
+            CRD_GROUP, CRD_VERSION, RESOURCE_PLURAL,
+            resource_name, namespace="default",
+        )
+        k8s.create_custom_resource(ref, resource_data)
+        cr = k8s.wait_resource_consumed_by_controller(ref)
+        assert cr is not None
+
+        # Wait for ACTIVE so late-initialization populates deletionProtectionEnabled
+        assert _wait_for_cluster_active(ref), \
+            "Cluster did not reach ACTIVE before deletion protection test"
+        condition.assert_synced(ref)
+
+        # Verify deletionProtectionEnabled was late-initialized to true
+        cr = k8s.get_resource(ref)
+        dp_value = cr.get("spec", {}).get("deletionProtectionEnabled")
+        assert dp_value is True, \
+            f"Expected deletionProtectionEnabled=true after late-init, got {dp_value}"
+
+        identifier = cr["status"]["identifier"]
+
+        # Step 1: Attempt to delete — should be rejected by CEL validation
+        delete_rejected = False
+        try:
+            k8s.delete_custom_resource(ref, 1, 5)
+        except ApiException as e:
+            if e.status in (403, 422):
+                delete_rejected = True
+                logging.info(f"Delete correctly rejected: {e.reason}")
+            else:
+                raise
+
+        assert delete_rejected, \
+            "Expected delete to be rejected by CEL validation when deletionProtectionEnabled=true"
+
+        # Verify the resource still exists
+        assert k8s.get_resource_exists(ref), \
+            "Resource should still exist after rejected delete"
+
+        # Step 2: Disable deletion protection
+        updates = {"spec": {"deletionProtectionEnabled": False}}
+        k8s.patch_custom_resource(ref, updates)
+        time.sleep(UPDATE_WAIT_AFTER_SECONDS)
+
+        # Wait for the update to reconcile
+        assert _wait_for_cluster_active(ref), \
+            "Cluster did not return to Synced after disabling deletion protection"
+        condition.assert_synced(ref)
+
+        # Verify the field was updated
+        cr = k8s.get_resource(ref)
+        dp_value = cr.get("spec", {}).get("deletionProtectionEnabled")
+        assert dp_value is False, \
+            f"Expected deletionProtectionEnabled=false after patch, got {dp_value}"
+
+        # Step 3: Delete again — should succeed now
+        _, deleted = k8s.delete_custom_resource(ref, 3, 10)
+        assert deleted, "Delete should succeed when deletionProtectionEnabled=false"
+
+        # Wait for AWS deletion
+        for _ in range(30):
+            time.sleep(20)
+            aws_cluster = _get_aws_cluster(dsql_client, identifier)
+            if aws_cluster is None or aws_cluster.get("status") == "DELETED":
+                return
+
+        pytest.fail(
+            f"Cluster {identifier} was not deleted from AWS after disabling protection"
+        )
+
     def test_multi_region_cluster_peered(self, dsql_client):
         """Test multi-region cluster with bidirectional peering reaches ACTIVE.
 
@@ -636,8 +748,11 @@ class TestCluster:
                 f"Peer cluster did not reach ACTIVE in {peer_region}"
 
         finally:
-            # Teardown: delete ACK CR first, then peer cluster
+            # Teardown: disable deletion protection, delete ACK CR, then peer cluster
             try:
+                updates = {"spec": {"deletionProtectionEnabled": False}}
+                k8s.patch_custom_resource(ref, updates)
+                time.sleep(UPDATE_WAIT_AFTER_SECONDS)
                 _, deleted = k8s.delete_custom_resource(ref, 3, 10)
             except Exception:
                 pass
