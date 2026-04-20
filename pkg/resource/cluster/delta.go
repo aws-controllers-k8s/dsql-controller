@@ -85,3 +85,34 @@ func newResourceDelta(
 
 	return delta
 }
+
+// newResourceDeltaForPreDelete returns a new `ackcompare.Delta` that includes
+// only fields configured for pre-delete comparison, and a merged resource that
+// is a deep copy of b (observed) with only those differing fields overwritten
+// from a (desired). Used for pre-delete sync.
+func newResourceDeltaForPreDelete(
+	a *resource,
+	b *resource,
+) (*ackcompare.Delta, *resource) {
+	delta := ackcompare.NewDelta()
+	if (a == nil && b != nil) ||
+		(a != nil && b == nil) {
+		delta.Add("", a, b)
+		return delta, nil
+	}
+
+	if ackcompare.HasNilDifference(a.ko.Spec.DeletionProtectionEnabled, b.ko.Spec.DeletionProtectionEnabled) {
+		delta.Add("Spec.DeletionProtectionEnabled", a.ko.Spec.DeletionProtectionEnabled, b.ko.Spec.DeletionProtectionEnabled)
+	} else if a.ko.Spec.DeletionProtectionEnabled != nil && b.ko.Spec.DeletionProtectionEnabled != nil {
+		if *a.ko.Spec.DeletionProtectionEnabled != *b.ko.Spec.DeletionProtectionEnabled {
+			delta.Add("Spec.DeletionProtectionEnabled", a.ko.Spec.DeletionProtectionEnabled, b.ko.Spec.DeletionProtectionEnabled)
+		}
+	}
+
+	// Build merged resource: start from observed (b) and overlay only the
+	// pre-delete fields from desired (a).
+	merged := b.DeepCopy().(*resource)
+	merged.ko.Spec.DeletionProtectionEnabled = a.ko.Spec.DeletionProtectionEnabled
+
+	return delta, merged
+}

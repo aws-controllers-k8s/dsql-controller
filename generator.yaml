@@ -5,8 +5,6 @@ ignore:
     # IAM policy lockout checks. It should not be exposed to end users through
     # the CRD as it could lock the cluster owner out of their own cluster.
     - CreateClusterInput.BypassPolicyLockoutSafetyCheck
-    - CreateClusterInput.DeletionProtectionEnabled
-    - UpdateClusterInput.DeletionProtectionEnabled
 
 resources:
   Cluster:
@@ -39,6 +37,11 @@ resources:
         is_read_only: true
       Policy:
         is_iam_policy: true
+      DeletionProtectionEnabled:
+        late_initialize: {}
+        compare:
+          is_ignored: true
+          pre_delete_include: true
       KMSEncryptionKey:
         references:
           resource: Key
@@ -51,8 +54,6 @@ resources:
         template_path: hooks/cluster/sdk_read_one_post_set_output.go.tpl
       sdk_update_pre_build_request:
         template_path: hooks/cluster/sdk_update_pre_build_request.go.tpl
-      sdk_delete_pre_build_request:
-        template_path: hooks/cluster/sdk_delete_pre_build_request.go.tpl
     exceptions:
       terminal_codes:
         - ValidationException
