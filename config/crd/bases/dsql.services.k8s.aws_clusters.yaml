@@ -52,6 +52,11 @@ spec:
           spec:
             description: ClusterSpec defines the desired state of Cluster.
             properties:
+              deletionProtectionEnabled:
+                description: |-
+                  If enabled, you can't delete your cluster. You must first disable this property
+                  before you can delete your cluster.
+                type: boolean
               kmsEncryptionKey:
                 description: |-
                   The KMS key that encrypts and protects the data on your cluster. You can
@@ -173,9 +178,6 @@ spec:
                 description: The time of when created the cluster.
                 format: date-time
                 type: string
-              deletionProtectionEnabled:
-                description: Whether deletion protection is enabled on this cluster.
-                type: boolean
               encryptionDetails:
                 description: |-
                   The encryption configuration for the cluster that was specified during the
