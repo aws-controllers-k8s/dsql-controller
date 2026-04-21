@@ -1,0 +1,10 @@
+apiVersion: dsql.services.k8s.aws/v1alpha1
+kind: Cluster
+metadata:
+  name: $CLUSTER_NAME
+spec:
+  tags:
+    Environment: testing
+    ManagedBy: ACK
+  multiRegionProperties:
+    witnessRegion: $WITNESS_REGION
