@@ -97,6 +97,23 @@ def _get_aws_cluster_policy(dsql_client, identifier):
         return None
 
 
+def _teardown_cluster(ref):
+    """Disable deletion protection and delete a Cluster CR.
+
+    Patches the CR to set deletionProtectionEnabled=false, waits for the
+    controller to reconcile, then deletes the CR. This ensures the controller
+    can successfully call DeleteCluster in AWS.
+    """
+    try:
+        updates = {"spec": {"deletionProtectionEnabled": False}}
+        k8s.patch_custom_resource(ref, updates)
+        time.sleep(UPDATE_WAIT_AFTER_SECONDS)
+        _, deleted = k8s.delete_custom_resource(ref, 3, 10)
+        assert deleted
+    except Exception:
+        pass
+
+
 def _wait_for_aws_cluster_status(dsql_client, identifier, target_statuses,
                                   max_attempts=ACTIVE_WAIT_PERIODS,
                                   wait_seconds=ACTIVE_WAIT_PERIOD_LENGTH):
@@ -135,12 +152,8 @@ def simple_cluster(dsql_client):
 
     yield (ref, cr)
 
-    # Teardown
-    try:
-        _, deleted = k8s.delete_custom_resource(ref, 3, 10)
-        assert deleted
-    except Exception:
-        pass
+    # Teardown: disable deletion protection before deleting
+    _teardown_cluster(ref)
 
 
 @pytest.fixture(scope="module")
@@ -169,12 +182,8 @@ def cluster_with_tags(dsql_client):
 
     yield (ref, cr)
 
-    # Teardown
-    try:
-        _, deleted = k8s.delete_custom_resource(ref, 3, 10)
-        assert deleted
-    except Exception:
-        pass
+    # Teardown: disable deletion protection before deleting
+    _teardown_cluster(ref)
 
 
 @pytest.fixture(scope="module")
@@ -209,12 +218,8 @@ def multi_region_cluster(dsql_client):
 
     yield (ref, cr)
 
-    # Teardown
-    try:
-        _, deleted = k8s.delete_custom_resource(ref, 3, 10)
-        assert deleted
-    except Exception:
-        pass
+    # Teardown: disable deletion protection before deleting
+    _teardown_cluster(ref)
 
 
 @service_marker
@@ -402,7 +407,14 @@ class TestCluster:
             "New tag not added"
 
     def test_delete_cluster(self, dsql_client):
-        """Test that deleting the CR invokes DeleteCluster and cleans up."""
+        """Test that deleting the CR invokes DeleteCluster and cleans up.
+
+        Verifies that:
+        1. Deleting with deletionProtectionEnabled=true is blocked (cluster
+           remains in AWS).
+        2. After disabling deletion protection via spec patch, the pre-delete
+           sync allows DeleteCluster to succeed.
+        """
         resource_name = random_suffix_name("ack-dsql-del", 24)
 
         replacements = REPLACEMENT_VALUES.copy()
@@ -429,13 +441,39 @@ class TestCluster:
         cr = k8s.get_resource(ref)
         identifier = cr["status"]["identifier"]
 
-        # Verify cluster exists in AWS
-        aws_cluster = _get_aws_cluster(dsql_client, identifier)
-        assert aws_cluster is not None
+        # Attempt to delete the CR without explicitly setting
+        # deletionProtectionEnabled=false. The controller cannot disable
+        # deletion protection (spec field is nil), so DeleteCluster fails
+        # with a ValidationException and the CR gets a Terminal condition.
+        k8s.delete_custom_resource(ref, 3, 10)
 
-        # Delete the K8s resource
-        _, deleted = k8s.delete_custom_resource(ref, 3, 10)
-        assert deleted
+        # Wait for the terminal condition to appear
+        assert k8s.wait_on_condition(ref, "ACK.Terminal", "True", wait_periods=5), \
+            "Expected ACK.Terminal condition after delete with deletion protection enabled"
+
+        # Verify the terminal condition has an error message about deletion protection
+        cr = k8s.get_resource(ref)
+        terminal_condition = None
+        for cond in cr["status"].get("conditions", []):
+            if cond["type"] == "ACK.Terminal":
+                terminal_condition = cond
+                break
+
+        assert terminal_condition is not None, "Terminal condition not found"
+        assert terminal_condition["status"] == "True"
+        assert "ValidationException" in terminal_condition.get("message", ""), \
+            f"Expected ValidationException in terminal message, got: {terminal_condition.get('message')}"
+
+        # Verify the cluster still exists in AWS (deletion was blocked)
+        aws_cluster = _get_aws_cluster(dsql_client, identifier)
+        assert aws_cluster is not None, \
+            "Cluster was deleted from AWS despite deletion protection being enabled"
+        assert aws_cluster.get("status") == "ACTIVE", \
+            f"Expected cluster to remain ACTIVE, got {aws_cluster.get('status')}"
+
+        # Disable deletion protection and delete — this verifies pre-delete
+        # sync works when deletionProtectionEnabled is set to false in spec.
+        _teardown_cluster(ref)
 
         # Wait for AWS deletion to complete
         max_attempts = 30
@@ -636,11 +674,8 @@ class TestCluster:
                 f"Peer cluster did not reach ACTIVE in {peer_region}"
 
         finally:
-            # Teardown: delete ACK CR first, then peer cluster
-            try:
-                _, deleted = k8s.delete_custom_resource(ref, 3, 10)
-            except Exception:
-                pass
+            # Teardown: disable deletion protection, delete ACK CR, then peer cluster
+            _teardown_cluster(ref)
 
             # Wait for ACK cluster to be deleted from AWS before deleting peer
             for _ in range(30):
