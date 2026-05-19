@@ -2,6 +2,8 @@ github.com/Masterminds/semver/v3 v3.4.0 h1:Zog+i5UMtVoCU8oKka5P7i9q9HgrJeGzI9SA1
 github.com/Masterminds/semver/v3 v3.4.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/aws-controllers-k8s/kms-controller v1.2.2 h1:1xB+0Qkwl6fxeJyhorm6Ffrva8ToS7rm7Gx2eDxmbVo=
 github.com/aws-controllers-k8s/kms-controller v1.2.2/go.mod h1:YZIR9KwX+g3gsJE1jbRjVQ+evqCaNb4nFSs85hprYb8=
+github.com/aws-controllers-k8s/runtime v0.59.1 h1:7UDKl9/dif8oNjxx/5Z5ciUfuyn86MS4BvoG9LqF6h4=
+github.com/aws-controllers-k8s/runtime v0.59.1/go.mod h1:ljWD1IdtVx/qC7C4lVobF4vLNhno/xX5A78BOke1Ksk=
 github.com/aws/aws-sdk-go v1.55.8 h1:JRmEUbU52aJQZ2AjX4q4Wu7t4uZjOu71uyNmaWlUkJQ=
 github.com/aws/aws-sdk-go v1.55.8/go.mod h1:ZkViS9AqA6otK+JBBNH2++sx1sgxrPKcSzPPvQkUtXk=
 github.com/aws/aws-sdk-go-v2 v1.41.5 h1:dj5kopbwUsVUVFgO4Fi5BIT3t4WyqIDjGKCangnV/yY=
@@ -108,8 +110,8 @@ github.com/mailru/easyjson v0.7.7 h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0
 github.com/mailru/easyjson v0.7.7/go.mod h1:xzfreul335JAWq5oZzymOObrkdz5UnU4kGfJJLY9Nlc=
 github.com/mattn/go-isatty v0.0.14/go.mod h1:7GGIvUiUoEMVVmxf/4nioHXj79iQHKdU27kJ6hsGG94=
 github.com/mattn/go-runewidth v0.0.9/go.mod h1:H031xJmbD/WCDINGzjvQ9THkh0rPKHF+m2gUSrubnMI=
-github.com/micahhausler/aws-iam-policy v0.4.4 h1:1aMhJ+0CkvUJ8HGN1chX+noXHs8uvGLkD7xIBeYd31c=
-github.com/micahhausler/aws-iam-policy v0.4.4/go.mod h1:H+yWljTu4XWJjNJJYgrPUai0AUTGNHc8pumkN57/foI=
+github.com/micahhausler/aws-iam-policy v0.4.5-0.20260511184658-411e29b8ffd2 h1:J1D4vj3/AVzVoo1allyJJD3mh7J6bPWXVoQHOBQ+p5Y=
+github.com/micahhausler/aws-iam-policy v0.4.5-0.20260511184658-411e29b8ffd2/go.mod h1:H+yWljTu4XWJjNJJYgrPUai0AUTGNHc8pumkN57/foI=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w8PVh93nsPXa1VrQ6jlwL5oN8l14QlcNfg=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
@@ -137,8 +139,6 @@ github.com/prometheus/procfs v0.16.1 h1:hZ15bTNuirocR6u0JZ6BAHHmwS1p8B4P6MRqxtzM
 github.com/prometheus/procfs v0.16.1/go.mod h1:teAbpZRB1iIAJYREa1LsoWUXykVXA1KlTmWl8x/U+Is=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
-github.com/sapphirew/ack-runtime v0.0.0-20260420232153-a2382caa3636 h1:8+qgJ5Rc7YcubjvVxk/fooMNneWos46E5AzcrkuwOBs=
-github.com/sapphirew/ack-runtime v0.0.0-20260420232153-a2382caa3636/go.mod h1:WPlOiAG+xGySh1I076llz5g6nbuUeH62Qxh49hnieGo=
 github.com/spf13/pflag v1.0.9 h1:9exaQaMOCwffKiiiYk6/BndUBv+iRViNW+4lEMi0PvY=
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
