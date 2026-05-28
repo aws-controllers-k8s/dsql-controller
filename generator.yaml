@@ -47,8 +47,6 @@ resources:
           service_name: kms
           path: Status.ACKResourceMetadata.ARN
     hooks:
-      sdk_create_post_set_output:
-        template_path: hooks/cluster/sdk_create_post_set_output.go.tpl
       sdk_read_one_post_set_output:
         template_path: hooks/cluster/sdk_read_one_post_set_output.go.tpl
       sdk_update_pre_build_request:
