@@ -157,27 +157,8 @@ func (rm *resourceManager) sdkFind(
 
 	rm.setStatusDefaults(ko)
 
-	// Read the current cluster policy via the dedicated GetClusterPolicy API.
-	// Policy is not returned by GetCluster, so we fetch it separately and
-	// populate ko.Spec.Policy with the current AWS value. This hook is
-	// read-only — policy mutations are handled in the update hook.
-	if ko.Status.Identifier != nil {
-		policyResp, policyErr := rm.sdkapi.GetClusterPolicy(ctx, &svcsdk.GetClusterPolicyInput{
-			Identifier: ko.Status.Identifier,
-		})
-		if policyErr != nil {
-			var notFound *svcsdktypes.ResourceNotFoundException
-			if !errors.As(policyErr, &notFound) {
-				return nil, policyErr
-			}
-			// No policy attached — leave as nil so it matches a desired spec
-			// that also has no policy (avoids a spurious nil vs "" delta).
-			ko.Spec.Policy = nil
-		} else if policyResp.Policy != nil {
-			ko.Spec.Policy = policyResp.Policy
-		} else {
-			ko.Spec.Policy = nil
-		}
+	if err := setResourcePolicy(ctx, rm, ko); err != nil {
+		return nil, err
 	}
 
 	return &resource{ko}, nil
@@ -346,65 +327,12 @@ func (rm *resourceManager) sdkUpdate(
 	defer func() {
 		exit(err)
 	}()
-	// Guard: Do not attempt updates while the cluster is in a transitional
-	// state. The DSQL API will reject mutations during these phases, so we
-	// requeue and wait for the cluster to reach a stable state.
-	if latest.ko.Status.Status != nil {
-		latestStatus := *latest.ko.Status.Status
-		if latestStatus == "CREATING" || latestStatus == "UPDATING" || latestStatus == "PENDING_SETUP" {
-			return nil, ackrequeue.NeededAfter(
-				fmt.Errorf("cluster is in transitional state '%s', cannot update", latestStatus),
-				ackrequeue.DefaultRequeueAfterDuration,
-			)
-		}
-	}
 
-	// Handle tag changes via TagResource/UntagResource APIs.
-	if delta.DifferentAt("Spec.Tags") {
-		arn := (*string)(latest.ko.Status.ACKResourceMetadata.ARN)
-		err = syncTags(
-			ctx,
-			desired.ko.Spec.Tags, latest.ko.Spec.Tags,
-			arn, convertToOrderedACKTags, rm.sdkapi, rm.metrics,
-		)
-		if err != nil {
-			return nil, err
-		}
+	skipUpdate, err := customUpdate(ctx, rm, desired, latest, delta)
+	if err != nil {
+		return nil, err
 	}
-
-	// Handle policy changes via PutClusterPolicy/DeleteClusterPolicy APIs.
-	// Policy sync is handled here in the update path (not in sdkFind) to
-	// keep the read path side-effect free.
-	if delta.DifferentAt("Spec.Policy") {
-		desiredPolicy := ""
-		if desired.ko.Spec.Policy != nil {
-			desiredPolicy = *desired.ko.Spec.Policy
-		}
-		if desiredPolicy != "" {
-			_, err = rm.sdkapi.PutClusterPolicy(ctx, &svcsdk.PutClusterPolicyInput{
-				Identifier: latest.ko.Status.Identifier,
-				Policy:     &desiredPolicy,
-			})
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			// Desired policy is empty — remove the existing policy.
-			_, err = rm.sdkapi.DeleteClusterPolicy(ctx, &svcsdk.DeleteClusterPolicyInput{
-				Identifier: latest.ko.Status.Identifier,
-			})
-			if err != nil {
-				var notFound *svcsdktypes.ResourceNotFoundException
-				if !errors.As(err, &notFound) {
-					return nil, err
-				}
-				// ResourceNotFoundException means no policy exists — treat as success.
-			}
-		}
-	}
-
-	// If only tags and/or policy changed, skip the UpdateCluster API call.
-	if !delta.DifferentExcept("Spec.Tags", "Spec.Policy") {
+	if skipUpdate {
 		return desired, nil
 	}
 
