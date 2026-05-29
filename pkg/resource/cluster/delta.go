@@ -42,6 +42,13 @@ func newResourceDelta(
 		return delta
 	}
 
+	if ackcompare.HasNilDifference(a.ko.Spec.DeletionProtectionEnabled, b.ko.Spec.DeletionProtectionEnabled) {
+		delta.Add("Spec.DeletionProtectionEnabled", a.ko.Spec.DeletionProtectionEnabled, b.ko.Spec.DeletionProtectionEnabled)
+	} else if a.ko.Spec.DeletionProtectionEnabled != nil && b.ko.Spec.DeletionProtectionEnabled != nil {
+		if *a.ko.Spec.DeletionProtectionEnabled != *b.ko.Spec.DeletionProtectionEnabled {
+			delta.Add("Spec.DeletionProtectionEnabled", a.ko.Spec.DeletionProtectionEnabled, b.ko.Spec.DeletionProtectionEnabled)
+		}
+	}
 	if ackcompare.HasNilDifference(a.ko.Spec.KMSEncryptionKey, b.ko.Spec.KMSEncryptionKey) {
 		delta.Add("Spec.KMSEncryptionKey", a.ko.Spec.KMSEncryptionKey, b.ko.Spec.KMSEncryptionKey)
 	} else if a.ko.Spec.KMSEncryptionKey != nil && b.ko.Spec.KMSEncryptionKey != nil {

@@ -39,7 +39,6 @@ resources:
       DeletionProtectionEnabled:
         late_initialize: {}
         compare:
-          is_ignored: true
           pre_delete_include: true
       KMSEncryptionKey:
         references:
